@@ -10,12 +10,15 @@ def main():
     songs_dir = sys.argv[1]
     print(f"Building database from songs in: {songs_dir}\n")
 
-    database = build_song_database(songs_dir, verbose=True)
+    database, catalog = build_song_database(songs_dir, verbose=True)
 
     with open("database.pkl", "wb") as f:
         pickle.dump(database, f)
+    with open("catalog.pkl", "wb") as f:
+        pickle.dump(catalog, f)
 
-    print(f"\nSaved database.pkl ({len(database)} unique hashes).")
+    print(f"\nSaved database.pkl ({len(database)} unique hashes) "
+          f"and catalog.pkl ({len(catalog)} songs).")
 
 if __name__ == "__main__":
     main()

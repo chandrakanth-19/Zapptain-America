@@ -108,8 +108,10 @@ def build_song_database(songs_dir, sr=SAMPLE_RATE, verbose=True):
     """
     Walk through every mp3/wav in `songs_dir`, fingerprint it, and build a
     lookup table: hash -> list of (song_filename, anchor_time_index).
+    Also returns a catalog: song_filename -> {"peaks": n, "hashes": n}.
     """
     database = {}
+    catalog = {}
     song_files = sorted(f for f in os.listdir(songs_dir) if f.lower().endswith((".mp3", ".wav")))
 
     for filename in song_files:
@@ -119,14 +121,14 @@ def build_song_database(songs_dir, sr=SAMPLE_RATE, verbose=True):
 
         for h, t1 in fingerprints:
             database.setdefault(h, []).append((filename, t1))
+        catalog[filename] = {"peaks": len(peaks), "hashes": len(fingerprints)}
 
         if verbose:
             print(f"  fingerprinted {filename}: {len(peaks)} peaks -> {len(fingerprints)} hashes")
 
     if verbose:
         print(f"\nDatabase built: {len(database)} unique hashes across {len(song_files)} songs")
-    return database
-
+    return database, catalog
 
 def match_fingerprints(fingerprints, database):
     """
@@ -140,6 +142,20 @@ def match_fingerprints(fingerprints, database):
                 offset = t1_db - t1_query
                 votes[(song_name, offset)] += 1
     return votes.most_common()
+
+
+def aggregate_by_song(votes):
+    """
+    Collapse the (song, offset) vote list to one best score per song --
+    mirrors the reference app's 'candidate scores' list (Never Gonna Give You
+    Up: 6732, Crazy Little Thing Called Love: 4, ...). Each song's score is
+    its best-aligned offset's vote count.
+    """
+    best_per_song = {}
+    for (song_name, offset), count in votes:
+        if count > best_per_song.get(song_name, 0):
+            best_per_song[song_name] = count
+    return sorted(best_per_song.items(), key=lambda kv: kv[1], reverse=True)
 
 
 def match_query(query_audio, database, sr=SAMPLE_RATE):

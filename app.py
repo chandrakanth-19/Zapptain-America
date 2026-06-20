@@ -29,9 +29,18 @@ from fingerprint import (
     find_peaks_constellation,
     build_fingerprints,
     match_fingerprints,
+    aggregate_by_song,
 )
 
 DATABASE_PATH = "database.pkl"
+CATALOG_PATH = "catalog.pkl"
+
+@st.cache_resource
+def load_catalog():
+    if not os.path.exists(CATALOG_PATH):
+        return None
+    with open(CATALOG_PATH, "rb") as f:
+        return pickle.load(f)
 
 
 # ----------------------------------------------------------------------
@@ -50,28 +59,25 @@ def load_database():
 
 
 def predict_from_audio(y, database, sr=SAMPLE_RATE):
-    """
-    Runs the full pipeline on a loaded waveform and returns everything needed
-    for both the UI (plots) and the CSV (prediction).
-    """
     f, t, Sxx = compute_spectrogram(y, sr)
     Sxx_db = spectrogram_db(Sxx)
     peaks = find_peaks_constellation(Sxx_db)
     fingerprints = build_fingerprints(peaks)
     votes = match_fingerprints(fingerprints, database)
+    ranked = aggregate_by_song(votes)
 
-    if votes:
-        best_song_name = votes[0][0][0]
+    if ranked:
+        best_song_name, top_score = ranked[0]
         prediction = os.path.splitext(best_song_name)[0]
+        runner_up_ratio = (top_score / ranked[1][1]) if len(ranked) > 1 and ranked[1][1] > 0 else None
     else:
-        prediction = None
+        prediction, top_score, runner_up_ratio = None, 0, None
 
     return {
         "f": f, "t": t, "Sxx_db": Sxx_db,
-        "peaks": peaks, "votes": votes,
-        "prediction": prediction,
+        "peaks": peaks, "votes": votes, "ranked": ranked,
+        "prediction": prediction, "top_score": top_score, "runner_up_ratio": runner_up_ratio,
     }
-
 
 # ----------------------------------------------------------------------
 # Plot helpers (Streamlit-friendly: return a matplotlib Figure)
@@ -124,12 +130,23 @@ def fig_offset_histogram(votes, title="Time-offset histogram"):
 # ----------------------------------------------------------------------
 # Streamlit UI
 # ----------------------------------------------------------------------
-st.set_page_config(page_title="Zapp tain America - Song Identifier", page_icon="🎵", layout="wide")
-st.title("🎵 Zapp tain America")
-st.caption("A small Shazam-style song identifier, built on spectrogram fingerprinting.")
+st.set_page_config(page_title="Zapptain America : Song Identifier", page_icon="", layout="wide")
+st.title("Zapptain America")
+st.caption("Song identifier, built on spectrogram fingerprinting.")
 
 database = load_database()
 st.sidebar.success(f"Database loaded: {len(database):,} unique hashes")
+
+catalog = load_catalog()
+if catalog:
+    with st.sidebar.expander(f"Songs in database ({len(catalog)})"):
+        catalog_df = pd.DataFrame(
+            [{"song": os.path.splitext(name)[0], "peaks": stats["peaks"], "hashes": stats["hashes"]}
+             for name, stats in sorted(catalog.items())]
+        )
+        st.dataframe(catalog_df, use_container_width=True, hide_index=True)
+else:
+    st.sidebar.caption("Re-run build_database.py with the updated fingerprint.py to see the song list here.")
 
 mode = st.sidebar.radio("Mode", ["Single-clip mode", "Batch mode"])
 
@@ -153,8 +170,17 @@ if mode == "Single-clip mode":
         st.subheader("Result")
         if result["prediction"] is not None:
             st.success(f"**Predicted song:** {result['prediction']}")
-            top_votes = result["votes"][0][1]
-            st.write(f"Top match votes: **{top_votes}**")
+            if result["runner_up_ratio"] is not None:
+                st.write(f"Cluster score **{result['top_score']}** · **{result['runner_up_ratio']:.0f}x** the runner-up")
+            else:
+                st.write(f"Cluster score **{result['top_score']}** (no runner-up to compare against)")
+
+            with st.expander("Candidate scores"):
+                candidates_df = pd.DataFrame(
+                    [(os.path.splitext(s)[0], c) for s, c in result["ranked"][:10]],
+                    columns=["song", "score"],
+                )
+                st.bar_chart(candidates_df.set_index("song"))
         else:
             st.warning("No match found in the database.")
 
