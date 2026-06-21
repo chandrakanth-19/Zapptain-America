@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import librosa
+import tempfile
 from scipy.signal import spectrogram
 from scipy.ndimage import maximum_filter
 from collections import Counter
@@ -11,8 +12,22 @@ SUPPORTED_EXTENSIONS = (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".aiff"
 
 def load_audio(path_or_buffer, sr=SAMPLE_RATE):
     
-    y, _ = librosa.load(path_or_buffer, sr=sr, mono=True)
-    return y
+    try:
+        y, _ = librosa.load(path_or_buffer, sr=sr, mono=True)
+        return y
+    except Exception:
+        if isinstance(path_or_buffer, (str, os.PathLike)):
+            raise  # already a real path -- retrying won't help
+        path_or_buffer.seek(0)
+        suffix = os.path.splitext(getattr(path_or_buffer, "name", ""))[1] or ".tmp"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(path_or_buffer.read())
+            tmp_path = tmp.name
+        try:
+            y, _ = librosa.load(tmp_path, sr=sr, mono=True)
+            return y
+        finally:
+            os.remove(tmp_path)
 
 
 def compute_spectrogram(y, sr=SAMPLE_RATE, nperseg=1024, noverlap=512, window="hann"):
