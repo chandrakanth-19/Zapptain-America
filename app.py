@@ -154,28 +154,42 @@ def fig_offset_histogram(votes, title="Time-offset histogram"):
     return fig
 
 
-#UI
+# UI
 st.set_page_config(page_title="Zapptain America : Song Identifier", page_icon="", layout="wide")
+
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #000000;
+        color: #FFFFFF;
+    }
+    header {
+        background-color: transparent !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("Zapptain America")
 st.caption("Song identifier, built on spectrogram fingerprinting.")
 
 database = load_database()
-st.sidebar.success(f"Database loaded: {len(database):,} unique hashes")
+st.success(f"Database loaded: {len(database):,} unique hashes")
 
 catalog = load_catalog()
 if catalog:
-    with st.sidebar.expander(f"Songs in database ({len(catalog)})"):
+    with st.expander(f"View Songs in Database ({len(catalog)})"):
         catalog_df = pd.DataFrame(
             [{"song": os.path.splitext(name)[0], "peaks": stats["peaks"], "hashes": stats["hashes"]}
              for name, stats in sorted(catalog.items())]
         )
         st.dataframe(catalog_df, use_container_width=True, hide_index=True)
 else:
-    st.sidebar.caption("Catalog_error")
+    st.caption("Catalog_error")
 
-mode = st.sidebar.radio("Mode", ["Single-clip mode", "Batch mode"])
 
-#single clip mode
+mode = st.selectbox("Select Mode", ["Single-clip mode", "Batch mode"])
+
+# single clip mode
 if mode == "Single-clip mode":
     st.header("Single-clip mode")
     st.write("Upload one query clip to identify it.")
@@ -230,7 +244,7 @@ if mode == "Single-clip mode":
             for (song, offset), count in result["votes"][:5]:
                 st.write(f"{os.path.splitext(song)[0]} | offset={offset} | votes={count}")
 
-#batch mode
+# batch mode
 else:
     st.header("Batch mode")
     st.write(
