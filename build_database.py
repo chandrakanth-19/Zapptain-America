@@ -17,8 +17,7 @@ def main():
     with open("catalog.pkl", "wb") as f:
         pickle.dump(catalog, f)
 
-    print(f"\nSaved database.pkl ({len(database)} unique hashes) "
-          f"and catalog.pkl ({len(catalog)} songs).")
+    print(f"\nSaved database.pkl ({len(database)} unique hashes) " f"and catalog.pkl ({len(catalog)} songs).")
 
 if __name__ == "__main__":
     main()

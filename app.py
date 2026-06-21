@@ -1,17 +1,3 @@
-"""
-app.py
-
-Q3B - "Zapp tain America": a Streamlit app that wraps the Q3A fingerprinting
-pipeline into a usable song identifier.
-
-Two modes (selected from the sidebar):
-  - Single-clip mode: upload one query clip; shows the spectrogram, the
-    constellation (peaks), the offset histogram, and the predicted song.
-  - Batch mode: upload a set of query clips; runs all of them and produces
-    results.csv with exactly two columns: filename, prediction
-    (both WITHOUT file extension), as required by the assignment spec.
-"""
-
 import os
 import pickle
 import tempfile
@@ -22,10 +8,19 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from fingerprint import (
-    SAMPLE_RATE, load_audio, compute_spectrogram, spectrogram_db,
-    find_peaks_constellation, build_fingerprints, match_fingerprints,
-    aggregate_by_song, best_offset_for_song,
+    SAMPLE_RATE,
+    load_audio,
+    compute_spectrogram,
+    spectrogram_db,
+    find_peaks_constellation,
+    build_fingerprints,
+    match_fingerprints,
+    aggregate_by_song,
+    best_offset_for_song,
+    SUPPORTED_EXTENSIONS,
 )
+
+UPLOAD_TYPES = [ext.lstrip(".") for ext in SUPPORTED_EXTENSIONS]
 
 DATABASE_PATH = "database.pkl"
 CATALOG_PATH = "catalog.pkl"
@@ -37,16 +32,11 @@ def load_catalog():
     with open(CATALOG_PATH, "rb") as f:
         return pickle.load(f)
 
-
-# ----------------------------------------------------------------------
-# Database loading (cached so it only loads once per app session)
-# ----------------------------------------------------------------------
 @st.cache_resource
 def load_database():
     if not os.path.exists(DATABASE_PATH):
         st.error(
-            f"Could not find '{DATABASE_PATH}'. Run build_database.py locally "
-            "first and commit the resulting database.pkl to the repo."
+            f"Could not find '{DATABASE_PATH}'."
         )
         st.stop()
     with open(DATABASE_PATH, "rb") as f:
@@ -75,13 +65,10 @@ def predict_from_audio(y, database, sr=SAMPLE_RATE):
         "top_score": top_score, "runner_up_ratio": runner_up_ratio, "best_offset": best_offset,
     }
 
-# ----------------------------------------------------------------------
-
-# ----------------------------------------------------------------------
 
 @st.cache_data
 def get_song_fingerprint_points(_database, song_name):
-    """Every stored hash anchor for one song, as (time_frame, freq_bin) points."""
+    
     points = []
     for h, entries in _database.items():
         f1 = h[0]
@@ -105,9 +92,7 @@ def fig_song_fingerprint_with_window(song_points, song_label, query_duration_fra
     return fig
 
 
-# ----------------------------------------------------------------------
-# Plot helpers (Streamlit-friendly: return a matplotlib Figure)
-# ----------------------------------------------------------------------
+#plot functions
 def fig_spectrogram(f, t, Sxx_db, title="Spectrogram"):
     fig, ax = plt.subplots(figsize=(8, 4))
     im = ax.pcolormesh(t, f, Sxx_db, shading="auto", cmap="magma")
@@ -121,11 +106,11 @@ def fig_spectrogram(f, t, Sxx_db, title="Spectrogram"):
 
 def fig_constellation(f, t, Sxx_db, peaks, title="Constellation map"):
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.pcolormesh(t, f, Sxx_db, shading="auto", cmap="gray_r")
+    ax.pcolormesh(t, f, Sxx_db, shading="auto", cmap="magma")
     if peaks:
         peak_t = [t[ti] for ti, fi in peaks]
         peak_f = [f[fi] for ti, fi in peaks]
-        ax.scatter(peak_t, peak_f, color="red", s=18, marker="o",
+        ax.scatter(peak_t, peak_f, color="white", s=18, marker="o",
                    facecolors="none", linewidths=1.1, label="Peaks")
     ax.set_title(title)
     ax.set_xlabel("Time (s)")
@@ -169,9 +154,7 @@ def fig_offset_histogram(votes, title="Time-offset histogram"):
     return fig
 
 
-# ----------------------------------------------------------------------
-# Streamlit UI
-# ----------------------------------------------------------------------
+#UI
 st.set_page_config(page_title="Zapptain America : Song Identifier", page_icon="", layout="wide")
 st.title("Zapptain America")
 st.caption("Song identifier, built on spectrogram fingerprinting.")
@@ -188,18 +171,16 @@ if catalog:
         )
         st.dataframe(catalog_df, use_container_width=True, hide_index=True)
 else:
-    st.sidebar.caption("Re-run build_database.py with the updated fingerprint.py to see the song list here.")
+    st.sidebar.caption("Catalog_error")
 
 mode = st.sidebar.radio("Mode", ["Single-clip mode", "Batch mode"])
 
-# ============================================================
-# SINGLE-CLIP MODE
-# ============================================================
+#single clip mode
 if mode == "Single-clip mode":
     st.header("Single-clip mode")
-    st.write("Upload one query clip to identify it, with the intermediate steps shown.")
+    st.write("Upload one query clip to identify it.")
 
-    uploaded = st.file_uploader("Upload a query clip (mp3 or wav)", type=["mp3", "wav"])
+    uploaded = st.file_uploader(f"Upload a query clip ({', '.join(UPLOAD_TYPES)})", type=UPLOAD_TYPES)
 
     if uploaded is not None:
         with st.spinner("Loading audio..."):
@@ -249,20 +230,14 @@ if mode == "Single-clip mode":
             for (song, offset), count in result["votes"][:5]:
                 st.write(f"{os.path.splitext(song)[0]} | offset={offset} | votes={count}")
 
-# ============================================================
-# BATCH MODE
-# ============================================================
+#batch mode
 else:
     st.header("Batch mode")
     st.write(
-        "Upload a set of query clips. The app fingerprints each one and writes "
-        "**results.csv** with exactly two columns: `filename, prediction` "
-        "(both without file extension), matching the required submission format."
+        "Upload a set of query clips. The app fingerprints each one and gives the best match for each query clip"
     )
 
-    uploaded_files = st.file_uploader(
-        "Upload query clips (mp3 or wav)", type=["mp3", "wav"], accept_multiple_files=True
-    )
+    uploaded_files = st.file_uploader(f"Upload query clips ({', '.join(UPLOAD_TYPES)})", type=UPLOAD_TYPES, accept_multiple_files=True)
 
     if uploaded_files:
         if st.button(f"Run batch identification on {len(uploaded_files)} file(s)"):
