@@ -22,14 +22,9 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from fingerprint import (
-    SAMPLE_RATE,
-    load_audio,
-    compute_spectrogram,
-    spectrogram_db,
-    find_peaks_constellation,
-    build_fingerprints,
-    match_fingerprints,
-    aggregate_by_song,
+    SAMPLE_RATE, load_audio, compute_spectrogram, spectrogram_db,
+    find_peaks_constellation, build_fingerprints, match_fingerprints,
+    aggregate_by_song, best_offset_for_song,
 )
 
 DATABASE_PATH = "database.pkl"
@@ -70,14 +65,45 @@ def predict_from_audio(y, database, sr=SAMPLE_RATE):
         best_song_name, top_score = ranked[0]
         prediction = os.path.splitext(best_song_name)[0]
         runner_up_ratio = (top_score / ranked[1][1]) if len(ranked) > 1 and ranked[1][1] > 0 else None
+        best_offset, _ = best_offset_for_song(votes, best_song_name)
     else:
-        prediction, top_score, runner_up_ratio = None, 0, None
+        best_song_name, prediction, top_score, runner_up_ratio, best_offset = None, None, 0, None, None
 
     return {
-        "f": f, "t": t, "Sxx_db": Sxx_db,
-        "peaks": peaks, "votes": votes, "ranked": ranked,
-        "prediction": prediction, "top_score": top_score, "runner_up_ratio": runner_up_ratio,
+        "f": f, "t": t, "Sxx_db": Sxx_db, "peaks": peaks, "votes": votes, "ranked": ranked,
+        "prediction": prediction, "best_song_name": best_song_name,
+        "top_score": top_score, "runner_up_ratio": runner_up_ratio, "best_offset": best_offset,
     }
+
+# ----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------
+
+@st.cache_data
+def get_song_fingerprint_points(_database, song_name):
+    """Every stored hash anchor for one song, as (time_frame, freq_bin) points."""
+    points = []
+    for h, entries in _database.items():
+        f1 = h[0]
+        for name, t1 in entries:
+            if name == song_name:
+                points.append((t1, f1))
+    return points
+
+def fig_song_fingerprint_with_window(song_points, song_label, query_duration_frames, best_offset):
+    fig, ax = plt.subplots(figsize=(10, 4))
+    if song_points:
+        times = [p[0] for p in song_points]
+        freqs = [p[1] for p in song_points]
+        ax.scatter(times, freqs, color="cyan", s=4, alpha=0.6)
+    ax.axvspan(best_offset, best_offset + query_duration_frames, color="orange", alpha=0.25, label="Query window")
+    ax.set_title(f"Where in the song? - {song_label}")
+    ax.set_xlabel("Time (frames)")
+    ax.set_ylabel("Freq bin")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    return fig
+
 
 # ----------------------------------------------------------------------
 # Plot helpers (Streamlit-friendly: return a matplotlib Figure)
@@ -105,6 +131,22 @@ def fig_constellation(f, t, Sxx_db, peaks, title="Constellation map"):
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Frequency (Hz)")
     ax.legend(loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+def fig_constellation_points_only(f, t, peaks, title="Constellation (points only)"):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    fig.patch.set_facecolor("black")
+    ax.set_facecolor("black")
+    if peaks:
+        peak_t = [t[ti] for ti, fi in peaks]
+        peak_f = [f[fi] for ti, fi in peaks]
+        ax.scatter(peak_t, peak_f, color="cyan", s=6)
+    ax.set_title(f"{title} ({len(peaks)} peaks)", color="white")
+    ax.set_xlabel("Time (s)", color="white")
+    ax.set_ylabel("Frequency (Hz)", color="white")
+    ax.tick_params(colors="white")
     fig.tight_layout()
     return fig
 
@@ -185,15 +227,23 @@ if mode == "Single-clip mode":
             st.warning("No match found in the database.")
 
         st.subheader("Intermediate steps")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.pyplot(fig_spectrogram(result["f"], result["t"], result["Sxx_db"],
-                                       title="Spectrogram"))
+            st.pyplot(fig_spectrogram(result["f"], result["t"], result["Sxx_db"], title="Spectrogram"))
         with col2:
-            st.pyplot(fig_constellation(result["f"], result["t"], result["Sxx_db"],
-                                         result["peaks"], title="Constellation (peaks)"))
+            st.pyplot(fig_constellation(result["f"], result["t"], result["Sxx_db"], result["peaks"], title="Constellation (overlay)"))
+        with col3:
+            st.pyplot(fig_constellation_points_only(result["f"], result["t"], result["peaks"], title="Constellation (points only)"))
 
         st.pyplot(fig_offset_histogram(result["votes"], title="Offset histogram"))
+
+        if result["prediction"] is not None and result["best_offset"] is not None:
+            st.subheader("Where in the song?")
+            with st.spinner("Reconstructing full-song fingerprint..."):
+                song_points = get_song_fingerprint_points(database, result["best_song_name"])
+            st.pyplot(fig_song_fingerprint_with_window(
+                song_points, result["prediction"], len(result["t"]), result["best_offset"]
+            ))
 
         with st.expander("Top 5 raw matches"):
             for (song, offset), count in result["votes"][:5]:

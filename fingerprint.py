@@ -175,3 +175,11 @@ def predict_song(query_audio, database, sr=SAMPLE_RATE):
     best_song_name = votes[0][0][0]
     prediction = os.path.splitext(best_song_name)[0]
     return prediction, votes
+
+def best_offset_for_song(votes, song_name):
+    """Return the (offset, vote_count) of the best-aligned match for a given song."""
+    best_offset, best_count = None, 0
+    for (name, offset), count in votes:
+        if name == song_name and count > best_count:
+            best_offset, best_count = offset, count
+    return best_offset, best_count
