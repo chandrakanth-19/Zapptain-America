@@ -4,7 +4,7 @@ from fingerprint import build_song_database
 
 def main():
     if len(sys.argv) != 2:
-        print("python build_database.py /path_to_song_database_folder")
+        print("Usage: python build_database.py /path/to/song_database_folder")
         sys.exit(1)
 
     songs_dir = sys.argv[1]

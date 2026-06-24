@@ -17,7 +17,7 @@ def load_audio(path_or_buffer, sr=SAMPLE_RATE):
         return y
     except Exception:
         if isinstance(path_or_buffer, (str, os.PathLike)):
-            raise  # already a real path -- retrying won't help
+            raise
         path_or_buffer.seek(0)
         suffix = os.path.splitext(getattr(path_or_buffer, "name", ""))[1] or ".tmp"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
